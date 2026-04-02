@@ -127,11 +127,12 @@ class MainWindow(QWidget):
         self.load_users()
 
         # Buttons
-        next_btn = QPushButton("Next")
-        prev_btn = QPushButton("Prev")
-        jump_btn = QPushButton("Jump")
-        save_btn = QPushButton("Save")
-        clear_btn = QPushButton("Clear")
+        ## Modified functionality to use keyboard shortcuts
+        next_btn = QPushButton("Next  [d]")         # next_btn = QPushButton("Next")
+        prev_btn = QPushButton("Prev  [a]")         # prev_btn = QPushButton("Prev")
+        jump_btn = QPushButton("Jump")              # jump_btn = QPushButton("Jump")
+        save_btn = QPushButton("Save  [s]")         # save_btn = QPushButton("Save")
+        clear_btn = QPushButton("Clear  [w]")       # clear_btn = QPushButton("Clear")
         new_user_btn = QPushButton("New User")
 
         # Connect
@@ -295,6 +296,22 @@ class MainWindow(QWidget):
 
         QMessageBox.information(self, "Saved", f"{fname}")
 
+    # -------------------------
+    ## Added functionality to use keyboard shortcuts
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == Qt.Key_A:
+            self.prev_line()
+        elif key == Qt.Key_D:
+            self.next_line()
+        elif key == Qt.Key_S:
+            self.save_sample()
+        elif key == Qt.Key_W:
+            self.canvas.clear()
+        elif key == Qt.Key_Space:
+            focused = QApplication.focusWidget()
+            if isinstance(focused, QPushButton):
+                focused.click()
 
 # -------------------------
 # MAIN
