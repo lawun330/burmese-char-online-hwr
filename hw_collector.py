@@ -13,9 +13,10 @@ import re
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QListWidget, QMessageBox, QInputDialog, QProgressBar
+    QLabel, QLineEdit, QListWidget, QMessageBox, QInputDialog, QProgressBar,
+    QShortcut
 )
-from PyQt5.QtGui import QPainter, QPen, QFont
+from PyQt5.QtGui import QPainter, QPen, QFont, QKeySequence
 from PyQt5.QtCore import Qt, QPoint, QRect
 
 DATASET_DIR = "dataset"
@@ -172,6 +173,17 @@ class MainWindow(QWidget):
 
         self.setLayout(main_layout)
 
+        # window-level shortcuts so a/d/s/w work while the canvas (or any child) has focus
+        for seq, slot in (
+            ("A", self.prev_line),
+            ("D", self.next_line),
+            ("S", self.save_sample),
+            ("W", self.canvas.clear),
+        ):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.WindowShortcut)
+            sc.activated.connect(slot)
+
         self.update_text()
 
     # -------------------------
@@ -299,19 +311,12 @@ class MainWindow(QWidget):
     # -------------------------
     ## Added functionality to use keyboard shortcuts
     def keyPressEvent(self, event):
-        key = event.key()
-        if key == Qt.Key_A:
-            self.prev_line()
-        elif key == Qt.Key_D:
-            self.next_line()
-        elif key == Qt.Key_S:
-            self.save_sample()
-        elif key == Qt.Key_W:
-            self.canvas.clear()
-        elif key == Qt.Key_Space:
+        if event.key() == Qt.Key_Space:
             focused = QApplication.focusWidget()
             if isinstance(focused, QPushButton):
                 focused.click()
+                return
+        super().keyPressEvent(event)
 
 # -------------------------
 # MAIN
