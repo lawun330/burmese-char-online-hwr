@@ -87,6 +87,11 @@ class DrawingWidget(QWidget):
         self.current_stroke = []
         self.update()
 
+    def undo_stroke(self):
+        if self.strokes:
+            self.strokes.pop()
+            self.update()
+
     def save(self, filepath):
         with open(filepath, "w") as f:
             for i, stroke in enumerate(self.strokes):
@@ -132,6 +137,7 @@ class MainWindow(QWidget):
         next_btn = QPushButton("Next  [d]")         # next_btn = QPushButton("Next")
         prev_btn = QPushButton("Prev  [a]")         # prev_btn = QPushButton("Prev")
         jump_btn = QPushButton("Jump")              # jump_btn = QPushButton("Jump")
+        undo_btn = QPushButton("Undo  [z]")
         save_btn = QPushButton("Save  [s]")         # save_btn = QPushButton("Save")
         clear_btn = QPushButton("Clear  [w]")       # clear_btn = QPushButton("Clear")
         new_user_btn = QPushButton("New User")
@@ -140,6 +146,7 @@ class MainWindow(QWidget):
         next_btn.clicked.connect(self.next_line)
         prev_btn.clicked.connect(self.prev_line)
         jump_btn.clicked.connect(self.jump_line)
+        undo_btn.clicked.connect(self.canvas.undo_stroke)
         save_btn.clicked.connect(self.save_sample)
         clear_btn.clicked.connect(self.canvas.clear)
         new_user_btn.clicked.connect(self.create_user)
@@ -162,6 +169,7 @@ class MainWindow(QWidget):
         control_layout.addWidget(next_btn)
         control_layout.addWidget(self.index_input)
         control_layout.addWidget(jump_btn)
+        control_layout.addWidget(undo_btn)
         control_layout.addWidget(save_btn)
         control_layout.addWidget(clear_btn)
 
@@ -179,6 +187,7 @@ class MainWindow(QWidget):
             ("D", self.next_line),
             ("S", self.save_sample),
             ("W", self.canvas.clear),
+            ("Z", self.canvas.undo_stroke),
         ):
             sc = QShortcut(QKeySequence(seq), self)
             sc.setContext(Qt.WindowShortcut)
