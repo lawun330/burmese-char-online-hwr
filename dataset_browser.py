@@ -6,17 +6,17 @@
 
 import sys
 import os
-import json
 import argparse
 import re
+from collections import defaultdict
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QListWidget, QLabel,
-    QHBoxLayout, QVBoxLayout
+    QApplication, QWidget, QListWidget, QLabel, QPushButton,
+    QHBoxLayout, QVBoxLayout, QDialog, QTextEdit, QMessageBox, QComboBox,
+    QLineEdit, QDialogButtonBox,
 )
 from PyQt5.QtGui import QPainter, QPen, QFont
 from PyQt5.QtCore import Qt, QPoint
-
 
 # -------------------------
 # Stroke Viewer Canvas
@@ -74,21 +74,43 @@ class MainWindow(QWidget):
     def __init__(self, dataset_dir, text_lines):
         super().__init__()
 
+        # Title and dataset directory
         self.setWindowTitle("Handwriting Dataset Browser")
-
         self.dataset_dir = dataset_dir
         self.text_lines = text_lines
 
+        # Widgets
         self.user_list = QListWidget()
         self.file_list = QListWidget()
-
         self.char_label = QLabel("Character")
         self.char_label.setAlignment(Qt.AlignCenter)
         self.char_label.setFont(QFont("Noto Sans Myanmar", 40))
-
         self.viewer = StrokeViewer()
-
         self.load_users()
+
+        # Controls
+        self.copies_combo = QComboBox()
+        for i in range(1, MAX_NUM_COPIES + 1):
+            self.copies_combo.addItem(str(i), i)
+        self.copies_combo.setCurrentIndex(DEFAULT_NUM_COPIES - 1)
+
+        self.check_btn = QPushButton()
+        self.check_btn.setToolTip(
+            "Check if each symbol has expected copies for the selected user."
+        )
+        self.check_btn.clicked.connect(self.run_file_check)
+        self.copies_combo.currentIndexChanged.connect(self._update_check_btn_text)
+        self._update_check_btn_text()
+
+        rename_btn = QPushButton("Rename file")
+        rename_btn.setToolTip(
+            "Rename the selected file for the selected user."
+        )
+        rename_btn.clicked.connect(self.rename_selected_file)
+
+        delete_btn = QPushButton("Delete file")
+        delete_btn.setToolTip("Delete the selected file for the selected user.")
+        delete_btn.clicked.connect(self.delete_selected_file)
 
         # Signals
         self.user_list.currentItemChanged.connect(self.load_files)
@@ -99,9 +121,17 @@ class MainWindow(QWidget):
         left_layout.addWidget(QLabel("Users"))
         left_layout.addWidget(self.user_list)
 
+        copies_row = QHBoxLayout()
+        copies_row.addWidget(QLabel("Copies"))
+        copies_row.addWidget(self.copies_combo, 1)
+        left_layout.addLayout(copies_row)
+        left_layout.addWidget(self.check_btn)
+
         mid_layout = QVBoxLayout()
         mid_layout.addWidget(QLabel("Files"))
         mid_layout.addWidget(self.file_list)
+        mid_layout.addWidget(rename_btn)
+        mid_layout.addWidget(delete_btn)
 
         right_layout = QVBoxLayout()
         right_layout.addWidget(self.char_label)
@@ -123,7 +153,11 @@ class MainWindow(QWidget):
 
         self.user_list.clear()
 
+        # updated by SaiJack
         for user in sorted(os.listdir(self.dataset_dir)):
+            user_path = os.path.join(self.dataset_dir, user)
+            if not os.path.isdir(user_path):
+                continue
             self.user_list.addItem(user)
 
     # -------------------------
@@ -180,6 +214,234 @@ class MainWindow(QWidget):
             self.char_label.setText("Unknown")
 
 
+    # function to update check button label (sync with user selected dropdown item)
+    def _update_check_btn_text(self):
+        n = self.copies_combo.currentData()
+        if n is None:
+            n = self.copies_combo.currentIndex() + 1
+        self.check_btn.setText(f"Check {n} copies")
+
+    # -------------------------
+    # Validate File Copies
+    # -------------------------
+    def run_file_check(self):
+        user_item = self.user_list.currentItem()
+        if not user_item:
+            QMessageBox.information(
+                self, "File check", "Select a user in the list first."
+            )
+            return
+
+        n = int(self.copies_combo.currentData())
+        name = user_item.text()
+        user_path = os.path.join(self.dataset_dir, name)
+        issues = validate_files_per_symbol(user_path, label=name, num_copies=n)
+
+        if issues:
+            dlg = QDialog(self)
+            dlg.setObjectName("issue_list_dialog")
+            dlg.setWindowTitle("Issues")
+            lay = QVBoxLayout(dlg)
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText("\n".join(issues))
+            lay.addWidget(text)
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dlg.accept)
+            lay.addWidget(close_btn)
+            dlg.exec_()
+        else:
+            QMessageBox.information(self, "File check", "No issues found.")
+
+    # -------------------------
+    # Rename File
+    # -------------------------
+    def rename_selected_file(self):
+        user_item = self.user_list.currentItem()
+        file_item = self.file_list.currentItem()
+        if not user_item or not file_item:
+            QMessageBox.information(
+                self, "Rename file", "Select a user and a file to rename."
+            )
+            return
+
+        old_name = file_item.text()
+        if not re.match(r"^\d+-\d+\.txt$", old_name):
+            QMessageBox.warning(self, "Rename file", "Cannot rename a non-stroke file.")
+            return
+
+        user = user_item.text()
+        old_path = os.path.join(self.dataset_dir, user, old_name)
+        if not os.path.isfile(old_path):
+            QMessageBox.warning(self, "Rename file", "File not found.")
+            return
+
+        new_name = input_text_rename(
+            self,
+            "Rename file",
+            "New filename:",
+            old_name,
+        )
+        if new_name is None:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == old_name:
+            return
+        if not re.match(r"^\d+-\d+\.txt$", new_name):
+            QMessageBox.warning(
+                self,
+                "Rename file",
+                "Name must match symbolID-copyNo.txt (e.g. 1-3.txt).",
+            )
+            return
+
+        new_path = os.path.join(self.dataset_dir, user, new_name)
+        if os.path.exists(new_path):
+            QMessageBox.warning(
+                self, "Rename file", "A file with that name already exists."
+            )
+            return
+
+        if not confirm_ok_cancel(
+            self,
+            "Rename file",
+            f"Rename\n{user}/{old_name}\nto\n{new_name}?",
+        ):
+            return
+
+        try:
+            os.rename(old_path, new_path)
+        except OSError as e:
+            QMessageBox.warning(self, "Rename file", str(e))
+            return
+
+        self.load_files()
+        for i in range(self.file_list.count()):
+            if self.file_list.item(i).text() == new_name:
+                self.file_list.setCurrentRow(i)
+                break
+
+    # -------------------------
+    # Delete File
+    # -------------------------
+    def delete_selected_file(self):
+        user_item = self.user_list.currentItem()
+        file_item = self.file_list.currentItem()
+        if not user_item or not file_item:
+            QMessageBox.information(
+                self, "Delete file", "Select a user and a file to delete."
+            )
+            return
+
+        fname = file_item.text()
+        if not re.match(r"^\d+-\d+\.txt$", fname):
+            QMessageBox.warning(self, "Delete file", "Cannot delete a non-stroke file.")
+            return
+
+        user = user_item.text()
+        path = os.path.join(self.dataset_dir, user, fname)
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Delete file", "File not found.")
+            return
+
+        if not confirm_ok_cancel(
+            self,
+            "Delete file",
+            f"Permanently delete\n{user}/{fname}?",
+        ):
+            return
+
+        try:
+            os.remove(path)
+        except OSError as e:
+            QMessageBox.warning(self, "Delete file", str(e))
+            return
+
+        row = self.file_list.row(file_item)
+        self.file_list.takeItem(row)
+        self.viewer.strokes = []
+        self.viewer.update()
+        self.char_label.setText("Character")
+        if self.file_list.count() > 0:
+            self.file_list.setCurrentRow(min(row, self.file_list.count() - 1))
+
+
+# -------------------------
+# Utilities
+# -------------------------
+DEFAULT_NUM_COPIES = 4  # expected copies per symbol
+
+MAX_NUM_COPIES = 9  # maximum possible number of copies per symbol
+
+# function to validate (missing/extra) N copies of each symbol stroke file
+def validate_files_per_symbol(user_dir, label=None, num_copies=DEFAULT_NUM_COPIES):
+    """
+    For one user folder: ensure each symbolID has copies (symbolID-1.txt to symbolID-num_copies.txt).
+    Returns issue strings; empty means OK.
+    """
+    tag = label or user_dir
+    if num_copies < 1 or num_copies > MAX_NUM_COPIES:
+        return [f"{tag}: invalid num_copies (use 1–{MAX_NUM_COPIES})"]
+
+    expected = set(range(1, num_copies + 1))
+
+    if not os.path.isdir(user_dir):
+        return [f"{tag}: not a directory"]
+
+    files = [f for f in os.listdir(user_dir) if f.endswith(".txt")]
+    groups = defaultdict(set)
+    for f in files:
+        try:
+            prefix, num = f.replace(".txt", "").split("-")
+            groups[prefix].add(int(num))
+        except ValueError:
+            continue
+
+    if not groups and not files:
+        return [f"{tag}: no .txt stroke files"]
+
+    issues = []
+    for prefix, nums in sorted(groups.items(), key=lambda x: int(x[0])):
+        missing = sorted(expected - nums)
+        extra = sorted(nums - expected)
+        if missing:
+            issues.append(f"{tag}  line {prefix}: missing {missing}")
+        if extra:
+            issues.append(f"{tag}  line {prefix}: extra {extra}")
+    return issues
+
+# function to confirm ok/cancel
+def confirm_ok_cancel(parent, title, text):
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setIcon(QMessageBox.Question)
+    msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+    msg.setDefaultButton(QMessageBox.Cancel)
+    return msg.exec_() == QMessageBox.Ok
+
+# function to input text for rename
+def input_text_rename(parent, title, label, value):
+    dlg = QDialog(parent)
+    dlg.setObjectName("rename_file_dialog")
+    dlg.setWindowTitle(title)
+    lay = QVBoxLayout(dlg)
+    lay.addWidget(QLabel(label))
+    edit = QLineEdit(value)
+    lay.addWidget(edit)
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dlg
+    )
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+    buttons.button(QDialogButtonBox.Cancel).setDefault(True)
+    lay.addWidget(buttons)
+    edit.returnPressed.connect(buttons.button(QDialogButtonBox.Ok).click)
+    if dlg.exec_() != QDialog.Accepted:
+        return None
+    return edit.text()
+
+
 # -------------------------
 # CLI
 # -------------------------
@@ -208,6 +470,19 @@ def main():
         lines = [line.strip() for line in f if line.strip()]
 
     app = QApplication(sys.argv)
+    app.setStyleSheet(
+        """
+        QMessageBox, QDialog#rename_file_dialog {
+            min-width: 250px;
+            min-height: 80px;
+        }
+        QDialog#issue_list_dialog {
+            min-width: 500px;
+            min-height: 300px;
+        }
+        """
+    )
+
     window = MainWindow(args.dataset, lines)
     window.show()
     sys.exit(app.exec_())
@@ -215,4 +490,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
