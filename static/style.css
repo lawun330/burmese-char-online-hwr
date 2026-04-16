@@ -744,7 +744,7 @@ header {
   overflow-x: hidden;
   display: grid;
   gap: 9px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--saves-to-advance, 3), minmax(0, 1fr));
   scrollbar-gutter: stable;
   padding-right: 6px;
 }

@@ -14,6 +14,14 @@ let SAVES_TO_ADVANCE = parseInt(
   10,
 );
 
+function syncSavesToAdvanceCss() {
+  document.documentElement.style.setProperty(
+    "--saves-to-advance",
+    String(SAVES_TO_ADVANCE),
+  );
+}
+syncSavesToAdvanceCss();
+
 const canvas = document.getElementById("draw-canvas");
 const ctx = canvas.getContext("2d");
 
@@ -430,6 +438,7 @@ function applySavesToAdvance(val) {
   if (n >= 1 && n <= 20) {
     SAVES_TO_ADVANCE = n;
     localStorage.setItem("savesToAdvance", n);
+    syncSavesToAdvanceCss();
     updateProgressBar();
     updateCharBadge();
     toast(`Saves to advance: ${n}`);
