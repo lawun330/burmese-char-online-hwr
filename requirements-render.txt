@@ -1,10 +1,6 @@
-PyQt5
 Pillow
 flask
 flask-cors
-numpy
-matplotlib
-torch
 boto3
 python-dotenv
 gunicorn
