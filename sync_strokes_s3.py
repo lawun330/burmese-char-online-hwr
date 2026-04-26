@@ -13,7 +13,9 @@ Install:
 
 Usage:
   python sync_strokes_s3.py upload --dataset dataset
+  python sync_strokes_s3.py upload --dataset dataset --force
   python sync_strokes_s3.py download --dataset dataset
+  python sync_strokes_s3.py download --dataset dataset --force
   python sync_strokes_s3.py list
 """
 
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from auto_save_strokes_s3 import get_s3_client, normalize_s3_prefix
@@ -52,16 +55,29 @@ def _s3_key(rel_path: str) -> str:
 
 
 def cmd_upload(args: argparse.Namespace) -> None:
-    from botocore.exceptions import ClientError
-
     root = Path(args.dataset).resolve()
     if not root.is_dir():
         raise SystemExit(f"Not a directory: {root}")
 
     s3 = get_s3_client()
     bucket = _bucket()
+    prefix = _s3_key("")
     uploaded = 0
     skipped = 0
+    slop = timedelta(seconds=args.slop_seconds)
+
+    remote_lm: dict[str, datetime] = {}
+    if not args.force:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents") or []:
+                key = obj["Key"]
+                if key.endswith("/") or not key.endswith(".txt"):
+                    continue
+                lm = obj["LastModified"]
+                if lm.tzinfo is None:
+                    lm = lm.replace(tzinfo=timezone.utc)
+                remote_lm[key] = lm
 
     for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
@@ -74,18 +90,14 @@ def cmd_upload(args: argparse.Namespace) -> None:
                 continue
             key = _s3_key(str(rel).replace(os.sep, "/"))
 
-            if args.skip_existing:
-                try:
-                    s3.head_object(Bucket=bucket, Key=key)
+            if not args.force and key in remote_lm:
+                local_mt = datetime.fromtimestamp(local.stat().st_mtime, tz=timezone.utc)
+                # skip if local mtime same or older than S3 LastModified (list payload; no HEAD)
+                if local_mt <= (remote_lm[key] + slop):
                     skipped += 1
+                    if args.verbose:
+                        print(f"skip unchanged {local}")
                     continue
-                except ClientError as e:
-                    status = int(e.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0) or 0)
-                    code = e.response.get("Error", {}).get("Code", "")
-                    if status == 404 or code in ("404", "NotFound", "NoSuchKey"):
-                        pass  # upload
-                    else:
-                        raise
 
             extra = {"ContentType": "text/plain; charset=utf-8"}
             s3.upload_file(str(local), bucket, key, ExtraArgs=extra)
@@ -93,7 +105,10 @@ def cmd_upload(args: argparse.Namespace) -> None:
             if args.verbose:
                 print(f"upload {local} -> s3://{bucket}/{key}")
 
-    print(f"upload done: {uploaded} files, skipped {skipped} (already present)")
+    msg = f"upload done: {uploaded} files"
+    if not args.force:
+        msg += f", skipped {skipped} (local mtime <= S3 LastModified)"
+    print(msg)
 
 
 def cmd_download(args: argparse.Namespace) -> None:
@@ -106,6 +121,8 @@ def cmd_download(args: argparse.Namespace) -> None:
 
     paginator = s3.get_paginator("list_objects_v2")
     downloaded = 0
+    skipped = 0
+    slop = timedelta(seconds=args.slop_seconds)
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents") or []:
@@ -117,12 +134,28 @@ def cmd_download(args: argparse.Namespace) -> None:
                 continue
             local = root / rel.replace("/", os.sep)
             local.parent.mkdir(parents=True, exist_ok=True)
+
+            if not args.force and local.is_file():
+                s3_lm = obj["LastModified"]
+                if s3_lm.tzinfo is None:
+                    s3_lm = s3_lm.replace(tzinfo=timezone.utc)
+                local_mt = datetime.fromtimestamp(local.stat().st_mtime, tz=timezone.utc)
+                # skip if local mtime same or newer than S3 LastModified (list payload; no HEAD)
+                if local_mt >= (s3_lm - slop):
+                    skipped += 1
+                    if args.verbose:
+                        print(f"skip unchanged {local}")
+                    continue
+
             s3.download_file(bucket, key, str(local))
             downloaded += 1
             if args.verbose:
                 print(f"download s3://{bucket}/{key} -> {local}")
 
-    print(f"download done: {downloaded} files into {root}")
+    msg = f"download done: {downloaded} files into {root}"
+    if not args.force:
+        msg += f", skipped {skipped} (local mtime >= S3 LastModified)"
+    print(msg)
 
 
 def cmd_list(_args: argparse.Namespace) -> None:
@@ -148,15 +181,34 @@ def main() -> None:
     u = sub.add_parser("upload", help="Upload local dataset tree to S3")
     u.add_argument("--dataset", default="dataset", help="Local dataset root (default: dataset)")
     u.add_argument(
-        "--skip-existing",
+        "--force",
         action="store_true",
-        help="Skip upload if object already exists (HEAD check)",
+        help="Re-upload every .txt",
+    )
+    u.add_argument(
+        "--slop-seconds",
+        type=int,
+        default=2,
+        metavar="N",
+        help="When skipping unchanged, allow N seconds clock skew vs S3 LastModified. Default: 2",
     )
     u.add_argument("-v", "--verbose", action="store_true")
     u.set_defaults(func=cmd_upload)
 
     d = sub.add_parser("download", help="Download objects from S3 into local dataset tree")
     d.add_argument("--dataset", default="dataset", help="Local dataset root (default: dataset)")
+    d.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-download every .txt",
+    )
+    d.add_argument(
+        "--slop-seconds",
+        type=int,
+        default=2,
+        metavar="N",
+        help="When skipping unchanged, allow N seconds clock skew vs S3 LastModified. Default: 2",
+    )
     d.add_argument("-v", "--verbose", action="store_true")
     d.set_defaults(func=cmd_download)
 
