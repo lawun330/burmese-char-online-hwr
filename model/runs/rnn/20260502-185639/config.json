@@ -1,0 +1,17 @@
+{
+  "mode": "train",
+  "model": "rnn",
+  "data": "dataset/",
+  "labels": "syl.txt",
+  "split_ratio": 0.2,
+  "hidden": 128,
+  "num_layers": 1,
+  "dropout": 0.01,
+  "epochs": 30,
+  "batch_size": 32,
+  "lr": 0.001,
+  "seed": 42,
+  "checkpoint_path": "model/checkpoints/rnn_seed42_20260502-185639.pt",
+  "plot": "yes",
+  "device": "cuda"
+}

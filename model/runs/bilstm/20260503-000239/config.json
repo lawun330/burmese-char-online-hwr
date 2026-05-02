@@ -1,0 +1,17 @@
+{
+  "mode": "train",
+  "model": "bilstm",
+  "data": "dataset/",
+  "labels": "syl.txt",
+  "split_ratio": 0.2,
+  "hidden": 256,
+  "num_layers": 2,
+  "dropout": 0.01,
+  "epochs": 30,
+  "batch_size": 32,
+  "lr": 0.001,
+  "seed": 42,
+  "checkpoint_path": "model/checkpoints/bilstm_seed42_20260503-000239.pt",
+  "plot": "yes",
+  "device": "cuda"
+}
