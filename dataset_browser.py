@@ -112,6 +112,21 @@ class MainWindow(QWidget):
         delete_btn.setToolTip("Delete the selected file for the selected user.")
         delete_btn.clicked.connect(self.delete_selected_file)
 
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Line # (e.g. 1029)")
+        self.search_btn = QPushButton("Search")
+        self.search_btn.setToolTip(
+            "Jump to lowest copy for this symbol line (e.g. 1029-1 or 1029-4)."
+        )
+        self.search_btn.clicked.connect(self.search_symbol)
+        self.search_input.returnPressed.connect(self.search_symbol)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setToolTip(
+            "Reload user list and files from disk (new folders/files appear)."
+        )
+        refresh_btn.clicked.connect(self.refresh_data)
+
         # Signals
         self.user_list.currentItemChanged.connect(self.load_files)
         self.file_list.currentItemChanged.connect(self.display_file)
@@ -128,6 +143,11 @@ class MainWindow(QWidget):
         left_layout.addWidget(self.check_btn)
 
         mid_layout = QVBoxLayout()
+        search_row = QHBoxLayout()
+        search_row.addWidget(self.search_input, 1)
+        search_row.addWidget(self.search_btn)
+        mid_layout.addLayout(search_row)
+        mid_layout.addWidget(refresh_btn)
         mid_layout.addWidget(QLabel("Files"))
         mid_layout.addWidget(self.file_list)
         mid_layout.addWidget(rename_btn)
@@ -183,6 +203,93 @@ class MainWindow(QWidget):
 
         for f in files:
             self.file_list.addItem(f)
+
+    # -------------------------
+    # Search File by Line Number
+    # -------------------------
+    def search_symbol(self):
+        user_item = self.user_list.currentItem()
+        if not user_item:
+            QMessageBox.information(
+                self, "Search", "Select a user in the list first."
+            )
+            return
+
+        raw = self.search_input.text().strip()
+        if not raw.isdigit():
+            QMessageBox.warning(
+                self,
+                "Search",
+                "Enter a line number (digits only, e.g. 1029).",
+            )
+            return
+
+        prefix = raw
+        user_path = os.path.join(self.dataset_dir, user_item.text())
+        if not os.path.isdir(user_path):
+            QMessageBox.warning(self, "Search", "User folder not found.")
+            return
+
+        matches = []
+        for fname in os.listdir(user_path):
+            m = re.match(r"^(\d+)-(\d+)\.txt$", fname)
+            if m and m.group(1) == prefix:
+                matches.append((int(m.group(2)), fname))
+
+        if not matches:
+            QMessageBox.warning(
+                self,
+                "Search",
+                f"No stroke files for line {prefix} for this user.",
+            )
+            return
+
+        matches.sort(key=lambda x: x[0])
+        target = matches[0][1]
+
+        self.load_files()
+        for i in range(self.file_list.count()):
+            if self.file_list.item(i).text() == target:
+                self.file_list.setCurrentRow(i)
+                return
+
+        QMessageBox.warning(
+            self,
+            "Search",
+            f"Found {target} on disk but it is not in the file list.",
+        )
+
+    # -------------------------
+    # Refresh Data
+    # -------------------------
+    def refresh_data(self):
+        user_item = self.user_list.currentItem()
+        user_name = user_item.text() if user_item else None
+        file_item = self.file_list.currentItem()
+        file_name = file_item.text() if file_item else None
+
+        self.load_users()
+
+        restored = False
+        if user_name:
+            for i in range(self.user_list.count()):
+                if self.user_list.item(i).text() == user_name:
+                    self.user_list.setCurrentRow(i)
+                    restored = True
+                    break
+
+        if not restored:
+            self.file_list.clear()
+            self.viewer.strokes = []
+            self.viewer.update()
+            self.char_label.setText("Character")
+            return
+
+        if file_name:
+            for i in range(self.file_list.count()):
+                if self.file_list.item(i).text() == file_name:
+                    self.file_list.setCurrentRow(i)
+                    break
 
     # -------------------------
     # Display Selected File
@@ -390,18 +497,25 @@ def validate_files_per_symbol(user_dir, label=None, num_copies=DEFAULT_NUM_COPIE
 
     files = [f for f in os.listdir(user_dir) if f.endswith(".txt")]
     groups = defaultdict(set)
+    max_line = 0
     for f in files:
         try:
             prefix, num = f.replace(".txt", "").split("-")
+            p_int = int(prefix)
+            max_line = max(max_line, p_int)
             groups[prefix].add(int(num))
         except ValueError:
             continue
 
-    if not groups and not files:
-        return [f"{tag}: no .txt stroke files"]
+    # only validate symbol lines 1 to max_line
+    # avoid reporting "missing" for the next file beyond the latest file
+    if max_line == 0:
+        max_line = 1
 
     issues = []
-    for prefix, nums in sorted(groups.items(), key=lambda x: int(x[0])):
+    for line_num in range(1, max_line + 1):
+        prefix = str(line_num)
+        nums = groups.get(prefix, set())
         missing = sorted(expected - nums)
         extra = sorted(nums - expected)
         if missing:
