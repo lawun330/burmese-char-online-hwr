@@ -1,7 +1,7 @@
 # Online Burmese Handwritten Character Recognition
 
 ## Overview
-This project focuses on online Burmese handwritten character recognition using real human handwriting and compares three machine learning models: Recurrent Neural Network (RNN) and Bidirectional Long Short-Term Memory (Bi-LSTM).
+This project focuses on online recognition of handwritten Burmese characters using real human handwriting and compares two machine learning models: a Recurrent Neural Network (RNN) and a Bidirectional Long Short-Term Memory (Bi-LSTM).
 
 ## File Structure
 ```
@@ -40,10 +40,19 @@ This project focuses on online Burmese handwritten character recognition using r
 ---
 
 ## Dataset
-This project uses custom dataset of real human handwriting, defined by symbols in `syl.txt`, with each symbol written four times.
+This project uses a custom dataset of real human handwriting, defined by symbols in `syl.txt`, with each symbol written four times.
 
 ## Data Collection
-This project implements a multi-mode handwritten Burmese character data collector. Stroke data can be captured in localhost mode on PC or mobile for direct local storage, and the production path is backed by an S3 + Render cloud pipeline for centralized dataset persistence. Local and cloud datasets are connected through built-in synchronization utilities, so collected strokes remain consistent and ready for shared access and model training.
+This project implements a multi-mode data collector for handwritten Burmese characters. Stroke data can be captured in localhost mode on PC or mobile for direct local storage, and the production path is backed by an S3 + Render cloud pipeline for centralized dataset persistence. Local and cloud datasets are connected through built-in synchronization utilities, so collected strokes remain consistent and ready for shared access and model training.
+
+## Environment Setup
+The `.env` file includes the following:
+```env
+S3_BUCKET = "example-bucket"
+AWS_DEFAULT_REGION = "example-aws-region"
+AWS_ACCESS_KEY_ID = "example-access-key-id"
+AWS_SECRET_ACCESS_KEY = "example-secret-assess-key"
+```
 
 ## Handwriting Data Collector
 - Render: https://burmese-char-online-hwr.onrender.com
@@ -135,7 +144,7 @@ python main.py --model bilstm --mode train --plot yes --data dataset/ --split_ra
 #### Best metric achieved during training:
 
 | Index | best val loss (@ep) | best val CER (@ep) | best val WER (@ep) | train/val loss | val error rate |
-|------:|--------------------:|-------------------:|-------------------:|---------------:|---------------:|
+|:-----:|:-------------------:|:------------------:|:------------------:|:--------------:|:--------------:|
 | Baseline     |  1.140 (30) |  0.358 (30) |  0.761 (30) | ![](model/runs/bilstm/20260502-225441/loss.png) | ![](model/runs/bilstm/20260502-225441/error_rates.png) |
 | Experiment 1 |  0.763 (30) |  0.231 (30) |  0.580 (30) | ![](model/runs/bilstm/20260502-234814/loss.png) | ![](model/runs/bilstm/20260502-234814/error_rates.png) |
 | Experiment 2 |  **0.301** (30) |  **0.093** (30) |  **0.252** (29) | ![](model/runs/bilstm/20260503-000239/loss.png) | ![](model/runs/bilstm/20260503-000239/error_rates.png) |
@@ -154,3 +163,9 @@ python main.py --model bilstm --mode train --plot yes --data dataset/ --split_ra
 - CTC Loss:
     - Ogun, S. O. (2020, July 17). _Breaking down the CTC loss_. Sewade's Website. https://ogunlao.github.io/blog/2020/07/17/breaking-down-ctc-loss.html
     - DataMListic. (2022, Aug 19). _Connectionist temporal classification (CTC) explained_ [Video]. YouTube. https://youtu.be/jDPl1QJGLpE
+
+---
+
+## Note
+
+This project was done for educational purposes as an assignment for the AI Engineering Fundamentals class taught by [*Sayar Ye Kyaw Thu*](https://github.com/ye-kyaw-thu).
