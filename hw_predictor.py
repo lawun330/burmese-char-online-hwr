@@ -29,11 +29,12 @@ from PyQt5.QtWidgets import (
 from hw_collector import DrawingWidget
 from main import make_model
 from model.data import build_codec_from_labels_file, strokes_to_features
-from model.metrics import ctc_greedy_decode
+from model.metrics import ctc_beam_decode_topk
 
 INPUT_SIZE = 6
 WINDOW_WIDTH = 700
-WINDOW_HEIGHT = 750
+WINDOW_HEIGHT = 820
+TOP_K = 5
 
 
 def resolve_checkpoint(path_or_hf: str, *, hf_token: str | None = None) -> str:
@@ -95,7 +96,7 @@ class StrokePredictor:
         self.model_name = cfg.model
         self.checkpoint_path = checkpoint_path
 
-    def predict(self, strokes) -> str:
+    def predict_topk(self, strokes, *, top_k: int = TOP_K) -> list[tuple[str, float]]:
         feats = strokes_to_features(strokes)
         if feats.shape[0] == 0:
             raise ValueError("empty drawing")
@@ -106,10 +107,21 @@ class StrokePredictor:
         with torch.no_grad():
             logp = self.model(x, xlen)
 
-        pred_ids = ctc_greedy_decode(
-            logp, xlen, blank_id=self.codec.blank_id
+        decoded = ctc_beam_decode_topk(
+            logp,
+            xlen,
+            blank_id=self.codec.blank_id,
+            beam_size=max(10, top_k * 2),
+            top_k=top_k,
         )[0]
-        return self.codec.decode_ids(pred_ids)
+        return [
+            (self.codec.decode_ids(ids), prob)
+            for ids, prob in decoded
+        ]
+
+    def predict(self, strokes) -> str:
+        topk = self.predict_topk(strokes, top_k=1)
+        return topk[0][0] if topk else ""
 
 
 class ModelLoadWorker(QThread):
@@ -179,6 +191,11 @@ class PredictorWindow(QWidget):
         self.prediction_label.setAlignment(Qt.AlignCenter)
         self.prediction_label.setFont(QFont("Noto Sans Myanmar", font_size))
 
+        self.topk_label = QLabel("")
+        self.topk_label.setAlignment(Qt.AlignCenter)
+        self.topk_label.setWordWrap(True)
+        self.topk_label.setMinimumHeight(28)
+
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
 
@@ -196,6 +213,11 @@ class PredictorWindow(QWidget):
         self.predict_btn.clicked.connect(self.predict)
         self.model_combo.currentTextChanged.connect(self.on_model_changed)
 
+        topk_font = QFont(self.predict_btn.font())
+        topk_font.setBold(True)
+        topk_font.setFamily("Noto Sans Myanmar")
+        self.topk_label.setFont(topk_font)
+
         controls = QHBoxLayout()
         controls.addWidget(undo_btn)
         controls.addWidget(clear_btn)
@@ -205,9 +227,11 @@ class PredictorWindow(QWidget):
         layout.addWidget(QLabel("Model"))
         layout.addWidget(self.model_combo)
         layout.addWidget(self.model_status)
-        layout.addWidget(QLabel("Prediction"))
-        layout.addWidget(self.prediction_label)
         layout.addWidget(self.status_label)
+        layout.addWidget(QLabel("Prediction:"))
+        layout.addWidget(self.prediction_label)
+        layout.addWidget(QLabel(f"Top {TOP_K} candidates:"))
+        layout.addWidget(self.topk_label)
         layout.addWidget(self.canvas, stretch=1)
         layout.addLayout(controls)
         self.setLayout(layout)
@@ -228,10 +252,11 @@ class PredictorWindow(QWidget):
         p = self.predictors[name]
         ckpt_name = os.path.basename(p.local_checkpoint_path)
         self.model_status.setText(f"Loaded {name}: {ckpt_name}")
-        self.model_status.setToolTip(p.local_checkpoint_path)
-        self.status_label.setText(
+        self.model_status.setToolTip(
+            f"{p.local_checkpoint_path}\n"
             f"vocab={p.codec.vocab_size} chars, device={self.device}"
         )
+        self.status_label.setText("")
         self.predict_btn.setEnabled(True)
 
     def load_current_model(self) -> None:
@@ -281,7 +306,18 @@ class PredictorWindow(QWidget):
 
     def on_model_changed(self, _name: str) -> None:
         self.prediction_label.setText("—")
+        self.topk_label.setText("")
+        self.status_label.setText("")
         self.load_current_model()
+
+    def _format_topk(self, topk: list[tuple[str, float]]) -> str:
+        if not topk:
+            return "—"
+        parts = []
+        for text, prob in topk:
+            label = text if text else "∅"
+            parts.append(f"{label} - {prob * 100:.0f}%")
+        return ", ".join(parts)
 
     def predict(self) -> None:
         if not self.canvas.strokes:
@@ -293,8 +329,10 @@ class PredictorWindow(QWidget):
             QMessageBox.warning(self, "Error", f"{name} still loading — please wait")
             return
         try:
-            pred = self.predictors[name].predict(self.canvas.strokes)
-            self.prediction_label.setText(pred or "—")
+            topk = self.predictors[name].predict_topk(self.canvas.strokes)
+            best = topk[0][0] if topk else ""
+            self.prediction_label.setText(best or "—")
+            self.topk_label.setText(self._format_topk(topk))
             self.status_label.setText(f"Predicted with {name}")
         except Exception as e:
             QMessageBox.critical(self, "Predict error", str(e))

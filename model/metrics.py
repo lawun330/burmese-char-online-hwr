@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+import math
 from typing import List, Sequence, Tuple
+
+
+def _logaddexp(a: float, b: float) -> float:
+    if a == float("-inf"):
+        return b
+    if b == float("-inf"):
+        return a
+    if a > b:
+        return a + math.log1p(math.exp(b - a))
+    return b + math.log1p(math.exp(a - b))
 
 
 def _levenshtein(a: Sequence[str], b: Sequence[str]) -> Tuple[int, int, int]:
@@ -99,4 +110,99 @@ def ctc_greedy_decode(
                     collapsed.append(int(s))
             out.append(collapsed)
         return out
+
+
+def ctc_beam_decode_topk(
+    log_probs_TBC,
+    lengths,
+    *,
+    blank_id: int = 0,
+    beam_size: int = 10,
+    top_k: int = 5,
+) -> List[List[Tuple[List[int], float]]]:
+    """
+    CTC prefix beam search.
+
+    log_probs_TBC: (T,B,C) log-probs
+    lengths: (B,) input lengths
+    returns per-batch list of (id_sequence, probability) up to top_k items
+    """
+    import torch
+
+    with torch.no_grad():
+        log_probs = log_probs_TBC.detach().cpu()
+        batch_out: List[List[Tuple[List[int], float]]] = []
+
+        for b in range(log_probs.shape[1]):
+            t_len = int(lengths[b].item())
+            frame_logp = log_probs[:t_len, b, :]
+            num_classes = frame_logp.shape[1]
+
+            # prefix -> (log_prob_blank_end, log_prob_non_blank_end)
+            beam: dict[tuple[int, ...], Tuple[float, float]] = {(): (0.0, float("-inf"))}
+
+            for t in range(t_len):
+                next_beam: dict[tuple[int, ...], Tuple[float, float]] = {}
+                for prefix, (lp_b, lp_nb) in beam.items():
+                    lp_prefix = _logaddexp(lp_b, lp_nb)
+                    for c in range(num_classes):
+                        lp = float(frame_logp[t, c].item())
+                        if c == blank_id:
+                            nb_b, nb_nb = next_beam.get(prefix, (float("-inf"), float("-inf")))
+                            next_beam[prefix] = (_logaddexp(nb_b, lp + lp_prefix), nb_nb)
+                        elif prefix and c == prefix[-1]:
+                            nb_b, nb_nb = next_beam.get(prefix, (float("-inf"), float("-inf")))
+                            next_beam[prefix] = (nb_b, _logaddexp(nb_nb, lp + lp_b))
+                            new_prefix = prefix + (c,)
+                            nb_b2, nb_nb2 = next_beam.get(
+                                new_prefix, (float("-inf"), float("-inf"))
+                            )
+                            next_beam[new_prefix] = (
+                                nb_b2,
+                                _logaddexp(nb_nb2, lp + lp_nb),
+                            )
+                        else:
+                            new_prefix = prefix + (c,)
+                            nb_b, nb_nb = next_beam.get(
+                                new_prefix, (float("-inf"), float("-inf"))
+                            )
+                            next_beam[new_prefix] = (
+                                nb_b,
+                                _logaddexp(nb_nb, lp + lp_prefix),
+                            )
+
+                ranked = sorted(
+                    (
+                        (pfx, _logaddexp(lp_b, lp_nb))
+                        for pfx, (lp_b, lp_nb) in next_beam.items()
+                    ),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+                beam = {
+                    pfx: next_beam[pfx]
+                    for pfx, _ in ranked[:beam_size]
+                }
+
+            finals = sorted(
+                (
+                    (list(pfx), _logaddexp(lp_b, lp_nb))
+                    for pfx, (lp_b, lp_nb) in beam.items()
+                ),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:top_k]
+
+            if not finals:
+                batch_out.append([])
+                continue
+
+            max_log = finals[0][1]
+            weights = [math.exp(score - max_log) for _, score in finals]
+            total = sum(weights) or 1.0
+            batch_out.append(
+                [(ids, weight / total) for (ids, _), weight in zip(finals, weights)]
+            )
+
+        return batch_out
 
