@@ -5,6 +5,7 @@ flask-cors
 numpy
 matplotlib
 torch
+huggingface_hub
 boto3
 python-dotenv
 gunicorn

@@ -51,7 +51,8 @@ The `.env` file includes the following:
 S3_BUCKET = "example-bucket"
 AWS_DEFAULT_REGION = "example-aws-region"
 AWS_ACCESS_KEY_ID = "example-access-key-id"
-AWS_SECRET_ACCESS_KEY = "example-secret-assess-key"
+AWS_SECRET_ACCESS_KEY = "example-secret-access-key"
+HF_TOKEN ="huggingface-read-access-key"
 ```
 
 ## Handwriting Data Collector
@@ -60,6 +61,8 @@ AWS_SECRET_ACCESS_KEY = "example-secret-assess-key"
 ---
 
 ## Models
+
+- HuggingFace: https://huggingface.co/lawun330/burmese-char-online-hwr
 
 ### 1. RNN + CTC
 
