@@ -156,6 +156,19 @@ python main.py --model bilstm --mode train --plot yes --data dataset/ --split_ra
 - best val CER = minimum va_cer over all epochs.
 - best val WER = minimum va_wer over all epochs.
 
+#### What is CER or WER in this project?
+
+- CER in this project should be interpreted as a normalized partial mismatch score at subword (syllable component) level, rather than edit-distance-based CER.
+- WER in this project refers to a binary word-level error measure, where each word/token is assigned 0 for an exact match and 1 for any mismatch, differing from the conventional edit-distance-based WER.
+- Example:
+    - ကို $\rightarrow$ spilt $\rightarrow$ က + လုံးကြီးတင် + တစ်ချောင်းငင် # each syllable is split into parts
+
+    -   | Reference | Prediction | Match? | CER (partial error) | WER (strict error) |
+        |:---------:|:----------:|:------:|:-------------------:|:-----------------:|
+        | ကို        | ကို         | exact match    | 0.0 | 0.0 |
+        | ကို        | က         | partial match  | 0.5 | 1.0 |
+        | ကို        | ကာ        | partial match  | 0.5 | 1.0 |
+
 ---
 
 ## References
