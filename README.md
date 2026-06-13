@@ -21,6 +21,7 @@ This project focuses on online recognition of handwritten Burmese characters usi
 ├── convert2image.py     # originally Sayar's
 ├── dataset_browser.py   # originally Sayar's # modified to add check, rename, delete, search, refresh buttons
 ├── hw_collector.py      # originally Sayar's # modified to add undo button & shortcuts
+├── hw_predictor.py
 │
 ├── static/              # added by Ko Sai Jack
 ├── Documentation.pdf    # added by Ko Sai Jack
@@ -66,7 +67,7 @@ HF_TOKEN ="huggingface-read-access-key"
 
 ## Models
 
-- HuggingFace: https://huggingface.co/lawun330/burmese-char-online-hwr
+- [Hugging Face Model](https://huggingface.co/lawun330/burmese-char-online-hwr)
 
 ### 1. RNN + CTC
 

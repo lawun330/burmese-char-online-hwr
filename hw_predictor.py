@@ -169,7 +169,7 @@ class PredictorWindow(QWidget):
         hf_token: str | None = None,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("Myanmar Syllable Handwriting Predictor")
+        self.setWindowTitle("Burmese Syllable Handwriting Predictor")
 
         self.labels_path = labels_path
         self.checkpoints = checkpoints
