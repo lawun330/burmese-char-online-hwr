@@ -3,10 +3,14 @@
 ## Overview
 This project focuses on online recognition of handwritten Burmese characters using real human handwriting and compares two machine learning models: a Recurrent Neural Network (RNN) and a Bidirectional Long Short-Term Memory (Bi-LSTM).
 
+| ![](img/rnn_inter_test.png) | ![](img/bilstm_inter_test.png) |
+|:---------------------------:|:------------------------------:|
+
 ## File Structure
 ```
 /
 ...
+├── img/
 ├── dataset/la_wun_nannda/
 ├── model/
 │   ├── runs/
